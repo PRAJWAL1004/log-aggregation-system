@@ -1,0 +1,204 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "Log Analysis with Elastic Stack",
+	"Parameters": {},
+	"Mappings": {},
+	"Resources": {
+		"DynamoLambda": {
+			"DependsOn": ["DynamoAccessRole", "DynamoTable"],
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"ZipFile": {
+						"Fn::Join": ["\n", [
+							"lwt({event: 'boot'});",
+							"var AWS = require('aws-sdk');",
+							"var DDB = new AWS.DynamoDB.DocumentClient();", {
+								"Fn::Join": ["", [
+									"var TABLE = '", {
+										"Ref": "DynamoTable"
+									}, "';"
+								]]
+							},
+							"exports.handler = function (ev, ctxt) {",
+							"  lwt({event: 'invoke', data: ev});",
+							"  switch (ev.fn) {",
+							"    case 'PUT':",
+							"      lwt({event: 'put', data: ev})",
+							"      DDB.put({TableName: TABLE, Item: ev.data}, dcb);",
+							"      break;",
+							"    case 'GET':",
+							"      lwt({event: 'get', data: ev})",
+							"      DDB.get({TableName: TABLE, Key: {id: ev.id}}, dcb);",
+							"      break;",
+							"    default:",
+							"      var e = {event: 'unknowncmd', data: ev};",
+							"      lwt(e);",
+							"      ctxt.fail(e);",
+							"      break;",
+							"  }",
+							"  function dcb (err, data) { ",
+							"    if (err) { ",
+							"      var e = {event: 'error', data: err};",
+							"      lwt(e); return ctxt.fail(e);",
+							"    }",
+							"    ctxt.done(null, {event: 'resp', data: data})",
+							"  }",
+							"};",
+							"function lwt(e) {e.timestamp = Date.now(); console.log(JSON.stringify(e));}"
+						]]
+					}
+				},
+				"Description": "Dynamo PUT and GET",
+				"Handler": "index.handler",
+				"MemorySize": 128,
+				"Role": {
+					"Fn::GetAtt": ["DynamoAccessRole", "Arn"]
+				},
+				"Runtime": "nodejs12.x",
+				"Timeout": 5
+			}
+		},
+		"DynamoTable": {
+			"Type": "AWS::DynamoDB::Table",
+			"Properties": {
+				"AttributeDefinitions": [{
+					"AttributeName": "id",
+					"AttributeType": "S"
+				}],
+				"KeySchema": [{
+					"AttributeName": "id",
+					"KeyType": "HASH"
+				}],
+				"ProvisionedThroughput": {
+					"ReadCapacityUnits": 3,
+					"WriteCapacityUnits": 3
+				}
+			}
+		},
+		"DynamoAccessRole": {
+			"DependsOn": ["DynamoTable"],
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": ["lambda.amazonaws.com"]
+						},
+						"Action": ["sts:AssumeRole"]
+					}]
+				}
+			}
+		},
+		"DynamoLambdaRolePolicy": {
+			"DependsOn": ["DynamoAccessRole"],
+			"Type": "AWS::IAM::Policy",
+			"Properties": {
+				"PolicyName": {
+					"Fn::Join": [
+						"-", [
+							"DynamoLambdaRolePolicy", {
+								"Ref": "AWS::StackName"
+							}
+						]
+					]
+				},
+				"PolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Action": ["dynamodb:*"],
+						"Resource": ["*"]
+					}, {
+						"Action": [
+							"logs:CreateLogGroup",
+							"logs:CreateLogStream",
+							"logs:PutLogEvents",
+                          	"es:*"
+						],
+						"Effect": "Allow",
+						"Resource": "*"
+					}]
+				},
+				"Roles": [{
+					"Ref": "DynamoAccessRole"
+				}]
+			}
+		},
+	"LambdaPolicyForElasticSearch":{
+		"Type":"AWS::IAM::Policy",
+		"Properties":{
+			"PolicyName":"LambdaPolicyForElasticSearch",
+			"Roles":[{"Ref":"LambdaRoleForElasticSearch"}],
+			"PolicyDocument":{
+			  	"Version": "2012-10-17",
+			  	"Statement": [
+			    {
+			      "Effect": "Allow",
+			      "Action": [
+			        "logs:CreateLogGroup",
+			        "logs:CreateLogStream",
+			        "logs:PutLogEvents"
+			      ],
+			      "Resource": [
+			        "arn:aws:logs:*:*:*"
+			      ]
+			    },
+			    {
+			      "Effect": "Allow",
+			      "Action": "es:ESHttpPost",
+			      "Resource": "arn:aws:es:*:*:*"
+			    }
+			  ]
+			
+			}
+	}
+	},
+	"LambdaRoleForElasticSearch":{
+		"Type": "AWS::IAM::Role",
+		"Properties":{
+			"RoleName":"LambdaElasticSearch",
+			"AssumeRolePolicyDocument":{
+				  "Version": "2012-10-17",
+				  "Statement": {
+				    "Effect": "Allow",
+				    "Principal": {"Service": "lambda.amazonaws.com"},
+				    "Action": "sts:AssumeRole"
+				  }
+				
+			}
+			}
+		}
+	},
+	"Outputs": {
+		"DynamoLambdaLogsLink": {
+			"Description": "The AWS Console URL of the CloudWatch Logs Group for the Lambda.",
+			"Value": {
+				"Fn::Join": ["", [
+					"https://console.aws.amazon.com/cloudwatch/home?region=", {
+						"Ref": "AWS::Region"
+					},
+					"#logStream:group=%252Faws%252Flambda%252F", {
+						"Ref": "DynamoLambda"
+					}
+				]]
+			}
+		},
+		"DynamoLambdaConsoleLink": {
+			"Description": "The AWS Console URL of the Lambda.",
+			"Value": {
+				"Fn::Join": ["", [
+					"https://console.aws.amazon.com/lambda/home?region=", {
+						"Ref": "AWS::Region"
+					},
+					"#/functions/", {
+						"Ref": "DynamoLambda"
+					}
+				]]
+			}
+		}
+
+	}
+}
