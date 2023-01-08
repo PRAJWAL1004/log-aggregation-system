@@ -1,7 +1,7 @@
 lwt({event: 'boot'});
 var AWS = require('aws-sdk');
 var DDB = new AWS.DynamoDB.DocumentClient();
-var TABLE = 'cloudacademylabs-DynamoTable-6L4ZFFDDX24B';
+var TABLE = 'table-name';
 exports.handler = function (ev, ctxt) {
   lwt({event: 'invoke', data: ev});
   switch (ev.fn) {
