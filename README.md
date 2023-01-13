@@ -1,2 +1,2 @@
 # log-aggregation-system
-[!My image] Log-Aggregation-System.drawio.png
+![arch-diagram](Log-Aggregation-System.drawio.png)
